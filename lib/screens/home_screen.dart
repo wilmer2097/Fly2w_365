@@ -2,33 +2,139 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Para cargar assets
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'custom_alert_widget.dart';
 
-// Definición global de la paleta de colores
+// Paleta de colores
 const Color blanco = Color(0xFFFFFFFF);
 const Color amarilloCrema = Color(0xFFFFE3B3);
 const Color amarilloCalido = Color(0xFFFFC973);
 const Color azulClaro = Color(0xFF30A0E0);
 const Color azulVibrante = Color(0xFF006BB9);
+const Color fondoFormulario = Color(0xFFF7F7F7);
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
+  @override
+  _HomeScreenState createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  // Variables para el logo
+  String _logoLink = "";
+  String _localLogoVersion = "0"; // Valor local (guardado en 'logo_variable.json')
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocalLogoVariable().then((localVer) {
+      _localLogoVersion = localVer ?? "0";
+      _checkAndUpdateLogo();
+    });
+  }
+
+  // Lee el archivo local "logo_variable.json" para obtener la versión del logo
+  Future<String?> _loadLocalLogoVariable() async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/logo_variable.json');
+      if (await file.exists()) {
+        final contents = await file.readAsString();
+        final Map<String, dynamic> data = jsonDecode(contents);
+        return data["url_logo_version"]?.toString();
+      }
+    } catch (e) {
+      print("Error leyendo variable local del logo: $e");
+    }
+    return null;
+  }
+
+  // Escribe el valor del logo en "logo_variable.json"
+  Future<void> _writeLocalLogoVariable(String value) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/logo_variable.json');
+      Map<String, dynamic> data = {"url_logo_version": value};
+      await file.writeAsString(jsonEncode(data));
+    } catch (e) {
+      print("Error escribiendo variable local del logo: $e");
+    }
+  }
+
+  /// Consulta el endpoint para obtener la variable "url_logo".
+  /// Actualiza solo si el valor remoto es mayor que el valor local (comparados como enteros).
+  Future<void> _checkAndUpdateLogo() async {
+    try {
+      final response = await http.get(Uri.parse(
+          "https://biblioteca1.info/fly2w/getVariable.php?var_nombre=url_logo"));
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> remoteData = jsonDecode(response.body);
+        String remoteValueStr = remoteData['var_valor'].toString();
+        String remoteUrl = remoteData['var_descripcion'].toString();
+        print("Valor remoto de url_logo: $remoteValueStr, URL: $remoteUrl");
+        int? remoteValue = int.tryParse(remoteValueStr);
+        int? localValue = int.tryParse(_localLogoVersion);
+        if (remoteValue != null && localValue != null && remoteValue > localValue) {
+          setState(() {
+            _logoLink = remoteUrl;
+            _localLogoVersion = remoteValueStr;
+          });
+          await _writeLocalLogoVariable(remoteValueStr);
+          print("Logo actualizado. Nueva versión local: $_localLogoVersion");
+        } else {
+          if (_logoLink.isEmpty) {
+            setState(() {
+              _logoLink = remoteUrl;
+            });
+          }
+          print("Logo está actualizado (versión local: $_localLogoVersion, remoto: $remoteValueStr)");
+        }
+      } else {
+        print("Error consultando url_logo: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("Excepción consultando url_logo: $e");
+    }
+  }
+
+  /// Lanza la URL del logo usando url_launcher.
+  Future<void> _launchLogoUrl() async {
+    if (_logoLink.isNotEmpty) {
+      final Uri url = Uri.parse(_logoLink);
+      print("Intentando lanzar URL: $_logoLink");
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.platformDefault);
+        print("URL lanzada correctamente.");
+      } else {
+        print("No se pudo abrir la URL: $_logoLink");
+      }
+    } else {
+      print("El valor de _logoLink está vacío.");
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: blanco, // Fondo blanco
+      backgroundColor: blanco,
       body: SafeArea(
         child: Column(
           children: [
-            // SECCIÓN SUPERIOR: Logo y título
+            // SECCIÓN SUPERIOR: Logo y título (logo clickeable)
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Row(
                 children: [
-                  Image.asset(
-                    'lib/assets/images/logo.png',
-                    height: 60,
+                  GestureDetector(
+                    onTap: _launchLogoUrl,
+                    child: Image.asset(
+                      'lib/assets/images/logo.png',
+                      height: 60,
+                    ),
                   ),
                   SizedBox(width: 12),
                   Text(
@@ -80,7 +186,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-/// Clase para mapear la información de cada imagen (de la tabla ImagenesMenu)
+/// Clase que representa cada registro de imagen (tabla ImagenesMenu)
 class ImagenMenu {
   final String filename;
   final int updatedAt;
@@ -107,7 +213,7 @@ class CarouselImages extends StatefulWidget {
 }
 
 class _CarouselImagesState extends State<CarouselImages> {
-  // Lista base de nombres de archivos (se asume que la tabla ImagenesMenu tiene estos registros)
+  // Lista base de nombres de archivos (según la tabla ImagenesMenu)
   final List<String> filenames = [
     'destino1.jpg',
     'destino2.jpg',
@@ -116,29 +222,23 @@ class _CarouselImagesState extends State<CarouselImages> {
     'destino5.jpg',
   ];
 
-  // Lista de objetos ImagenMenu obtenidos desde el endpoint
   List<ImagenMenu> imagenes = [];
-  // Lista final de URLs a mostrar
   List<String> displayUrls = [];
-
   int currentIndex = 0;
   late PageController _pageController;
   Timer? _timer;
-  final double imageHeight = 300; // Altura fija
+  final double imageHeight = 300;
 
-  // Valor local de la variable Img_cambio, se guardará en un JSON local
+  // Valor local de Img_cambio, almacenado en variables.json
   String _localImgCambio = "0";
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: currentIndex);
-    // Primero, cargar el valor local desde el archivo y luego proceder a actualizarlo si es necesario.
     _readLocalVariable().then((localVal) {
       _localImgCambio = localVal ?? "0";
-      // Consulta la variable remota y actualiza si es necesario.
       _checkAndUpdateVariable().then((_) {
-        // Una vez que se tenga el valor correcto, carga la lista de imágenes.
         _loadImagenes();
       });
     });
@@ -154,7 +254,6 @@ class _CarouselImagesState extends State<CarouselImages> {
     });
   }
 
-  /// Obtiene el directorio local y lee el archivo variables.json para obtener Img_cambio.
   Future<String?> _readLocalVariable() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
@@ -170,7 +269,6 @@ class _CarouselImagesState extends State<CarouselImages> {
     return null;
   }
 
-  /// Escribe el valor de Img_cambio en el archivo variables.json
   Future<void> _writeLocalVariable(String value) async {
     try {
       final directory = await getApplicationDocumentsDirectory();
@@ -182,28 +280,27 @@ class _CarouselImagesState extends State<CarouselImages> {
     }
   }
 
-  /// Consulta el endpoint para obtener Img_cambio y actualiza la caché si es necesario.
   Future<void> _checkAndUpdateVariable() async {
     try {
-      final response = await http.get(Uri.parse(
-          "https://biblioteca1.info/fly2w/getVariable.php?var_nombre=Img_cambio"));
+      final response = await http.get(Uri.parse("https://biblioteca1.info/fly2w/getVariable.php?var_nombre=Img_cambio"));
       if (response.statusCode == 200) {
         final Map<String, dynamic> remoteData = jsonDecode(response.body);
-        String remoteValue = remoteData['var_valor'].toString();
-        print("Valor remoto de Img_cambio: $remoteValue");
-        if (remoteValue != _localImgCambio) {
-          // Si los valores difieren, evicta la caché de todas las imágenes.
+        String remoteValueStr = remoteData['var_valor'].toString();
+        print("Valor remoto de Img_cambio: $remoteValueStr");
+        int? remoteValue = int.tryParse(remoteValueStr);
+        int? localValue = int.tryParse(_localImgCambio);
+        if (remoteValue != null && localValue != null && remoteValue > localValue) {
           for (String fname in filenames) {
             String url = "https://biblioteca1.info/fly2w/images/$fname";
             await CachedNetworkImage.evictFromCache(url);
             print("Cache evicted for $fname");
           }
-          // Actualiza el valor local y escribe en el archivo.
           setState(() {
-            _localImgCambio = remoteValue;
+            _localImgCambio = remoteValueStr;
           });
-          await _writeLocalVariable(remoteValue);
+          await _writeLocalVariable(remoteValueStr);
           print("Variable local actualizada: $_localImgCambio");
+          _loadImagenes();
         } else {
           print("Las imágenes están actualizadas (Img_cambio: $_localImgCambio)");
         }
@@ -215,7 +312,6 @@ class _CarouselImagesState extends State<CarouselImages> {
     }
   }
 
-  /// Carga la lista de imágenes desde el endpoint getImagenesMenu.php
   Future<void> _loadImagenes() async {
     try {
       final response = await http.get(Uri.parse("https://biblioteca1.info/fly2w/getImagenesMenu.php"));
@@ -234,11 +330,9 @@ class _CarouselImagesState extends State<CarouselImages> {
     }
   }
 
-  /// Construye la lista de URLs a mostrar a partir de la lista de imágenes.
   void _buildDisplayUrls() {
     setState(() {
       displayUrls = imagenes.map((img) {
-        // Aquí podrías agregar un parámetro de versión si lo deseas
         return "https://biblioteca1.info/fly2w/images/${img.filename}";
       }).toList();
     });
@@ -253,7 +347,6 @@ class _CarouselImagesState extends State<CarouselImages> {
 
   @override
   Widget build(BuildContext context) {
-    // Si displayUrls está vacío, usa un fallback basado en filenames.
     final List<String> urls = displayUrls.isNotEmpty
         ? displayUrls
         : filenames.map((fname) => "https://biblioteca1.info/fly2w/images/$fname").toList();
