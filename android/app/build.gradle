@@ -20,10 +20,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.fly2w_365"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -32,9 +29,24 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.debug
+        }
+    }
+
+    // Copiar el APK de salida a un nombre personalizado sin eliminar el archivo original
+    afterEvaluate {
+        def apkDir = file("$buildDir/outputs/flutter-apk")
+        tasks.named("assembleRelease").configure {
+            doLast {
+                apkDir.listFiles().each { file ->
+                    if (file.name == "app-release.apk") {
+                        def newName = "Fly2w365-v${android.defaultConfig.versionName}.apk"
+                        def newFile = new File(apkDir, newName)
+                        ant.copy(file: file, tofile: newFile, overwrite: true)
+                        println("APK copied as: $newName")
+                    }
+                }
+            }
         }
     }
 }

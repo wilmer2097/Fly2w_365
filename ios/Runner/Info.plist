@@ -45,5 +45,17 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Definir URL schemes correctamente -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.example.fly2w_365</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>flyw365</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

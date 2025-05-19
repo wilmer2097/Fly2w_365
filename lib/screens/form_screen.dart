@@ -1,10 +1,15 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io'; // Para operaciones con archivos locales
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Para cargar el JSON desde assets
+import 'package:flutter/services.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
 import 'package:http/http.dart' as http;
-import 'custom_alert_widget.dart'; // Asegúrate de que la ruta sea correcta
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:path_provider/path_provider.dart'; // Para obtener el directorio local
+import 'custom_alert_widget.dart';
+
 
 // Paleta de colores
 const Color blanco = Color(0xFFFFFFFF);
@@ -12,10 +17,13 @@ const Color amarilloCrema = Color(0xFFFFE3B3);
 const Color amarilloCalido = Color(0xFFFFC973);
 const Color azulClaro = Color(0xFF30A0E0);
 const Color azulVibrante = Color(0xFF006BB9);
-// Fondo del formulario (Card)
 const Color fondoFormulario = Color(0xFFF7F7F7);
 
 class FormScreen extends StatefulWidget {
+  final String? promoCode;
+
+  const FormScreen({Key? key, this.promoCode}) : super(key: key);
+
   @override
   _FormScreenState createState() => _FormScreenState();
 }
@@ -39,29 +47,121 @@ class _FormScreenState extends State<FormScreen> {
   DateTime? fechaRetorno;
   bool fechasFijas = false;
   bool soloPartida = false;
+  // Código del país, por defecto 'PE'
+  String _initialCountryCode = 'PE';
 
   // Dropdown: Número de pasajeros (1 a 10 y "Más de 10")
   int _selectedPasajeros = 1;
 
-  // Lista de ubicaciones cargada desde el JSON local
+  // Lista de ubicaciones (destinos) que se usarán en el Autocomplete
   List<String> locations = [];
+
+  // Variable local para la versión de destinos (destino_cambio)
+  String _localDestinoVersion = "0";
 
   @override
   void initState() {
     super.initState();
-    _loadLocations();
+    if (widget.promoCode != null) {
+      codigoPromoController.text = widget.promoCode!;
+    }
+    _loadLocalDestinoVersion().then((localVer) {
+      _localDestinoVersion = localVer ?? "0";
+      _loadLocationsFromAPI();
+    });
+    _obtenerCodigoPais();
   }
 
-  Future<void> _loadLocations() async {
+  /// Lee el archivo local "destino_variable.json" para obtener la versión local de destino_cambio
+  Future<String?> _loadLocalDestinoVersion() async {
     try {
-      final String jsonString =
-      await rootBundle.loadString('lib/assets/datosJson/destinos.json');
-      final List<dynamic> jsonResponse = json.decode(jsonString);
-      setState(() {
-        locations = jsonResponse.map((item) => item['agrupado'] as String).toList();
-      });
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/destino_variable.json');
+      if (await file.exists()) {
+        final contents = await file.readAsString();
+        final Map<String, dynamic> data = jsonDecode(contents);
+        return data["destino_cambio"]?.toString();
+      }
     } catch (e) {
-      print("Error al cargar ubicaciones: $e");
+      print("Error leyendo la versión local de destinos: $e");
+    }
+    return null;
+  }
+
+  /// Guarda la versión de destino_cambio en el archivo local "destino_variable.json"
+  Future<void> _writeLocalDestinoVersion(String value) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/destino_variable.json');
+      Map<String, dynamic> data = {"destino_cambio": value};
+      await file.writeAsString(jsonEncode(data));
+    } catch (e) {
+      print("Error escribiendo la versión local de destinos: $e");
+    }
+  }
+
+  /// Consulta la API para obtener la variable "destino_cambio" y la lista de destinos (filtrando bestado = 1)
+  Future<void> _loadLocationsFromAPI() async {
+    final String apiUrl = "https://biblioteca1.info/fly2w/getDestinos.php";
+    try {
+      final response = await http.get(Uri.parse(apiUrl));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        // Se espera que la API devuelva "destino_cambio" y "destinos"
+        String remoteVersionStr = data["destino_cambio"].toString();
+        int? remoteVersion = int.tryParse(remoteVersionStr);
+        int? localVersion = int.tryParse(_localDestinoVersion);
+
+        // Si la versión remota es mayor, se actualiza la lista y se guarda la nueva versión local.
+        if (remoteVersion != null &&
+            localVersion != null &&
+            remoteVersion > localVersion) {
+          List<dynamic> destinos = data["destinos"];
+          setState(() {
+            locations = destinos
+                .map((destino) => destino["agrupado"] as String)
+                .toList();
+          });
+          await _writeLocalDestinoVersion(remoteVersionStr);
+          print("Destinos actualizados. Nueva versión: $remoteVersionStr");
+        } else {
+          // Aunque no haya cambio en la versión, se actualiza la lista para la primera carga
+          List<dynamic> destinos = data["destinos"];
+          setState(() {
+            locations = destinos
+                .map((destino) => destino["agrupado"] as String)
+                .toList();
+          });
+          print("Destinos cargados. Versión local: $_localDestinoVersion, remoto: $remoteVersionStr");
+        }
+      } else {
+        print("Error al consultar la API de destinos: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("Excepción al cargar destinos desde la API: $e");
+    }
+  }
+
+  Future<void> _obtenerCodigoPais() async {
+    try {
+      // Verifica y solicita permisos si es necesario
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      // Obtén la ubicación actual del usuario
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+
+      // Realiza la geocodificación inversa para obtener datos de la ubicación
+      List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+      if (placemarks.isNotEmpty) {
+        setState(() {
+          _initialCountryCode = placemarks.first.isoCountryCode ?? 'PE';
+        });
+      }
+    } catch (e) {
+      print("Error al obtener el código de país: $e");
     }
   }
 
@@ -123,7 +223,7 @@ class _FormScreenState extends State<FormScreen> {
     );
   }
 
-  /// Widget para el selector de fechas con icono de calendario, clickeable.
+  /// Widget para el selector de fechas con icono de calendario.
   Widget _buildDateSelector(String label, DateTime? selectedDate, bool enabled, VoidCallback onTap) {
     return Material(
       color: Colors.transparent,
@@ -150,7 +250,8 @@ class _FormScreenState extends State<FormScreen> {
                     ? (selectedDate != null ? "${selectedDate.toLocal()}".split(' ')[0] : "No seleccionada")
                     : "No aplica",
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                   color: enabled ? (selectedDate != null ? azulVibrante : Colors.grey) : Colors.grey,
                 ),
               ),
@@ -161,8 +262,7 @@ class _FormScreenState extends State<FormScreen> {
     );
   }
 
-  /// Dropdown para seleccionar el número de pasajeros (1 a 10 y "Más de 10").
-  /// Usamos el valor 11 para representar "Más de 10".
+  /// Dropdown para seleccionar el número de pasajeros.
   Widget _buildPassengerDropdown() {
     return DropdownButtonFormField<int>(
       value: _selectedPasajeros,
@@ -280,13 +380,13 @@ class _FormScreenState extends State<FormScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Código de Promoción (opcional)
+                  // Código de Promoción (opcional, autocompletado si se pasa promoCode)
                   TextFormField(
                     controller: codigoPromoController,
-                    decoration: _buildInputDecoration("Código de Promoción(Opcional)", hint: "Ej. A0123 o PE000"),
+                    decoration: _buildInputDecoration("Código de Promoción (Opcional)", hint: "Ej. A0123 o PE000"),
                   ),
                   SizedBox(height: 16),
-                  // Origen (Autocomplete, datos del JSON)
+                  // Origen (Autocomplete con datos provenientes de la API)
                   Autocomplete<String>(
                     optionsBuilder: (TextEditingValue textEditingValue) {
                       if (textEditingValue.text.isEmpty)
@@ -312,7 +412,7 @@ class _FormScreenState extends State<FormScreen> {
                     },
                   ),
                   SizedBox(height: 16),
-                  // Destino (Autocomplete, datos del JSON)
+                  // Destino (Autocomplete)
                   Autocomplete<String>(
                     optionsBuilder: (TextEditingValue textEditingValue) {
                       if (textEditingValue.text.isEmpty)
@@ -338,11 +438,12 @@ class _FormScreenState extends State<FormScreen> {
                     },
                   ),
                   SizedBox(height: 16),
-                  // Fila para los selectores de Fecha de Partida y Retorno en la misma línea.
+                  // Fila de selectores de Fecha de Partida y Retorno
                   Row(
                     children: [
                       Expanded(
                         child: _buildDateSelector("Fecha de partida", fechaPartida, true, () => _selectFechaPartida(context)),
+
                       ),
                       SizedBox(width: 16),
                       Expanded(
@@ -351,7 +452,7 @@ class _FormScreenState extends State<FormScreen> {
                     ],
                   ),
                   SizedBox(height: 16),
-                  // Checkbox para Solo Partida
+                  // Checkbox: Solo Partida
                   Row(
                     children: [
                       Checkbox(
@@ -371,7 +472,7 @@ class _FormScreenState extends State<FormScreen> {
                     ],
                   ),
                   SizedBox(height: 16),
-                  // Checkbox para Fechas Fijas (ubicado encima del dropdown)
+                  // Checkbox: Fechas Fijas
                   Row(
                     children: [
                       Checkbox(
@@ -390,13 +491,13 @@ class _FormScreenState extends State<FormScreen> {
                     ],
                   ),
                   SizedBox(height: 16),
-                  // Dropdown para Número de Pasajeros (1 a 10 y "Más de 10")
+                  // Dropdown: Número de Pasajeros
                   _buildPassengerDropdown(),
                   SizedBox(height: 16),
                   // Nombre y Apellido
                   TextFormField(
                     controller: nombreController,
-                    decoration: _buildInputDecoration("Nombre y Apellido"),
+                    decoration: _buildInputDecoration("Nombre y Apellido de Contacto"),
                     validator: (value) {
                       if (value == null || value.isEmpty)
                         return "Este campo es obligatorio";
@@ -407,7 +508,7 @@ class _FormScreenState extends State<FormScreen> {
                   // Teléfono (intl_phone_field)
                   IntlPhoneField(
                     decoration: _buildInputDecoration("Teléfono"),
-                    initialCountryCode: 'MX',
+                    initialCountryCode: _initialCountryCode,
                     onChanged: (phone) {
                       completePhoneNumber = phone.completeNumber;
                     },

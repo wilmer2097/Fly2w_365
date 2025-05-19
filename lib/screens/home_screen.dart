@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'custom_alert_widget.dart';
+import 'form_screen.dart';
 
 // Paleta de colores
 const Color blanco = Color(0xFFFFFFFF);
@@ -116,7 +117,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -161,7 +161,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: azulVibrante,
-                  padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 32.0),
+                  padding: const EdgeInsets.symmetric(
+                      vertical: 16.0, horizontal: 32.0),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30.0),
                   ),
@@ -186,35 +187,37 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Clase que representa cada registro de imagen (tabla ImagenesMenu)
-class ImagenMenu {
-  final String filename;
-  final int updatedAt;
-  final bool flagActualizar;
+// Modelo para cada imagen obtenida de la vista vw_vector_img
+class CarouselImageFromView {
+  final String id;
+  final String? promo;
 
-  ImagenMenu({
-    required this.filename,
-    required this.updatedAt,
-    required this.flagActualizar,
-  });
+  CarouselImageFromView({required this.id, this.promo});
 
-  factory ImagenMenu.fromJson(Map<String, dynamic> json) {
-    return ImagenMenu(
-      filename: json['filename'],
-      updatedAt: int.parse(json['updated_at'].toString()),
-      flagActualizar: json['flag_actualizar'].toString() == "1",
+  factory CarouselImageFromView.fromJson(Map<String, dynamic> json) {
+    return CarouselImageFromView(
+      id: json['id'].toString(),
+      promo: json['promo'], // Será null si no hay promoción
     );
   }
 }
 
+// Widget del Carrusel que consume el API getVectorImg.php y maneja cacheo
 class CarouselImages extends StatefulWidget {
   @override
   _CarouselImagesState createState() => _CarouselImagesState();
 }
 
 class _CarouselImagesState extends State<CarouselImages> {
-  // Lista base de nombres de archivos (según la tabla ImagenesMenu)
-  final List<String> filenames = [
+  List<CarouselImageFromView> images = [];
+  int currentIndex = 0;
+  late PageController _pageController;
+  Timer? _timer;
+  final double imageHeight = 300;
+
+  // Variable local para Img_cambio y lista de nombres de archivo predeterminados
+  String _localImgCambio = "0";
+  final List<String> defaultFilenames = [
     'destino1.jpg',
     'destino2.jpg',
     'destino3.jpg',
@@ -222,29 +225,18 @@ class _CarouselImagesState extends State<CarouselImages> {
     'destino5.jpg',
   ];
 
-  List<ImagenMenu> imagenes = [];
-  List<String> displayUrls = [];
-  int currentIndex = 0;
-  late PageController _pageController;
-  Timer? _timer;
-  final double imageHeight = 300;
-
-  // Valor local de Img_cambio, almacenado en variables.json
-  String _localImgCambio = "0";
-
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: currentIndex);
-    _readLocalVariable().then((localVal) {
+    // Primero, leemos el valor local de Img_cambio y luego verificamos si hay cambios.
+    _readLocalImgCambio().then((localVal) {
       _localImgCambio = localVal ?? "0";
-      _checkAndUpdateVariable().then((_) {
-        _loadImagenes();
-      });
+      _checkAndUpdateVariable();
     });
     _timer = Timer.periodic(Duration(seconds: 3), (Timer timer) {
-      if (_pageController.hasClients && displayUrls.isNotEmpty) {
-        currentIndex = (currentIndex + 1) % displayUrls.length;
+      if (_pageController.hasClients && images.isNotEmpty) {
+        currentIndex = (currentIndex + 1) % images.length;
         _pageController.animateToPage(
           currentIndex,
           duration: Duration(milliseconds: 500),
@@ -254,7 +246,7 @@ class _CarouselImagesState extends State<CarouselImages> {
     });
   }
 
-  Future<String?> _readLocalVariable() async {
+  Future<String?> _readLocalImgCambio() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final file = File('${directory.path}/variables.json');
@@ -264,19 +256,19 @@ class _CarouselImagesState extends State<CarouselImages> {
         return data["Img_cambio"]?.toString();
       }
     } catch (e) {
-      print("Error leyendo variable local: $e");
+      print("Error leyendo variable local Img_cambio: $e");
     }
     return null;
   }
 
-  Future<void> _writeLocalVariable(String value) async {
+  Future<void> _writeLocalImgCambio(String value) async {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final file = File('${directory.path}/variables.json');
       Map<String, dynamic> data = {"Img_cambio": value};
       await file.writeAsString(jsonEncode(data));
     } catch (e) {
-      print("Error escribiendo variable local: $e");
+      print("Error escribiendo variable local Img_cambio: $e");
     }
   }
 
@@ -286,11 +278,11 @@ class _CarouselImagesState extends State<CarouselImages> {
       if (response.statusCode == 200) {
         final Map<String, dynamic> remoteData = jsonDecode(response.body);
         String remoteValueStr = remoteData['var_valor'].toString();
-        print("Valor remoto de Img_cambio: $remoteValueStr");
         int? remoteValue = int.tryParse(remoteValueStr);
         int? localValue = int.tryParse(_localImgCambio);
         if (remoteValue != null && localValue != null && remoteValue > localValue) {
-          for (String fname in filenames) {
+          // Si hay cambio, evictamos la cache de cada imagen usando la lista predeterminada.
+          for (String fname in defaultFilenames) {
             String url = "https://biblioteca1.info/fly2w/images/$fname";
             await CachedNetworkImage.evictFromCache(url);
             print("Cache evicted for $fname");
@@ -298,44 +290,37 @@ class _CarouselImagesState extends State<CarouselImages> {
           setState(() {
             _localImgCambio = remoteValueStr;
           });
-          await _writeLocalVariable(remoteValueStr);
-          print("Variable local actualizada: $_localImgCambio");
-          _loadImagenes();
-        } else {
-          print("Las imágenes están actualizadas (Img_cambio: $_localImgCambio)");
+          await _writeLocalImgCambio(remoteValueStr);
         }
       } else {
         print("Error consultando Img_cambio: ${response.statusCode}");
       }
     } catch (e) {
       print("Excepción consultando Img_cambio: $e");
+    } finally {
+      // Luego de verificar (y evictar si es necesario) se cargan las imágenes.
+      _fetchVectorImages();
     }
   }
 
-  Future<void> _loadImagenes() async {
+  Future<void> _fetchVectorImages() async {
     try {
-      final response = await http.get(Uri.parse("https://biblioteca1.info/fly2w/getImagenesMenu.php"));
+      final response = await http.get(
+        Uri.parse("https://biblioteca1.info/fly2w/getVectorImg.php"),
+      );
       if (response.statusCode == 200) {
         List<dynamic> data = jsonDecode(response.body);
-        List<ImagenMenu> temp = data.map((json) => ImagenMenu.fromJson(json)).toList();
         setState(() {
-          imagenes = temp;
-          _buildDisplayUrls();
+          images = data
+              .map((json) => CarouselImageFromView.fromJson(json))
+              .toList();
         });
       } else {
-        print("Error al cargar imágenes, status: ${response.statusCode}");
+        print("Error al obtener imágenes: ${response.statusCode}");
       }
     } catch (e) {
-      print("Excepción al cargar imágenes: $e");
+      print("Excepción al obtener imágenes: $e");
     }
-  }
-
-  void _buildDisplayUrls() {
-    setState(() {
-      displayUrls = imagenes.map((img) {
-        return "https://biblioteca1.info/fly2w/images/${img.filename}";
-      }).toList();
-    });
   }
 
   @override
@@ -347,47 +332,62 @@ class _CarouselImagesState extends State<CarouselImages> {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> urls = displayUrls.isNotEmpty
-        ? displayUrls
-        : filenames.map((fname) => "https://biblioteca1.info/fly2w/images/$fname").toList();
-
-    return Column(
+    return images.isEmpty
+        ? Center(child: CircularProgressIndicator())
+        : Column(
       children: [
         Expanded(
           child: PageView.builder(
             controller: _pageController,
-            itemCount: urls.length,
+            itemCount: images.length,
             onPageChanged: (index) {
               setState(() {
                 currentIndex = index;
               });
             },
             itemBuilder: (context, index) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Container(
-                  height: imageHeight,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: CachedNetworkImage(
-                    imageUrl: urls[index],
-                    imageBuilder: (context, imageProvider) => Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        image: DecorationImage(
-                          image: imageProvider,
-                          fit: BoxFit.cover,
-                        ),
+              final imageData = images[index];
+              // Asumimos que las imágenes se llaman "destino{id}.jpg"
+              final imageUrl =
+                  "https://biblioteca1.info/fly2w/images/destino${imageData.id}.jpg";
+              return GestureDetector(
+                onTap: () {
+                  // Al pulsar la imagen, se navega al formulario y se pasa el código de promoción (si existe)
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => FormScreen(
+                        promoCode: imageData.promo,
                       ),
                     ),
-                    placeholder: (context, url) => Container(
-                      height: imageHeight,
-                      child: Center(child: CircularProgressIndicator()),
+                  );
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Container(
+                    height: imageHeight,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    errorWidget: (context, url, error) => Container(
-                      height: imageHeight,
-                      child: Center(child: Text('Error al cargar la imagen')),
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      imageBuilder: (context, imageProvider) => Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          image: DecorationImage(
+                            image: imageProvider,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      placeholder: (context, url) => Container(
+                        height: imageHeight,
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        height: imageHeight,
+                        child: Center(child: Text('Error al cargar la imagen')),
+                      ),
                     ),
                   ),
                 ),
@@ -397,8 +397,7 @@ class _CarouselImagesState extends State<CarouselImages> {
         ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: urls.map((url) {
-            int index = urls.indexOf(url);
+          children: List.generate(images.length, (index) {
             return Container(
               width: 8.0,
               height: 8.0,
@@ -408,7 +407,7 @@ class _CarouselImagesState extends State<CarouselImages> {
                 color: currentIndex == index ? azulVibrante : amarilloCalido,
               ),
             );
-          }).toList(),
+          }),
         ),
       ],
     );
