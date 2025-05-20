@@ -6,7 +6,8 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.3.0'
+        // Actualiza a la versión estable más reciente de AGP (8.10.0)
+        classpath 'com.android.tools.build:gradle:8.10.0'
     }
 }
 
@@ -18,12 +19,8 @@ allprojects {
 }
 
 rootProject.buildDir = "../build"
-
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
-}
-
-subprojects {
     project.evaluationDependsOn(":app")
 }
 
