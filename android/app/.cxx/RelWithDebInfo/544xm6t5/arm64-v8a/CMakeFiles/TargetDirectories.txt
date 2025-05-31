@@ -1,0 +1,2 @@
+C:/Users/wilme/AndroidStudioProjects/fly2w_365/android/app/.cxx/RelWithDebInfo/544xm6t5/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/wilme/AndroidStudioProjects/fly2w_365/android/app/.cxx/RelWithDebInfo/544xm6t5/arm64-v8a/CMakeFiles/rebuild_cache.dir

@@ -1,4 +1,4 @@
-package com.example.fly2w_365
+package com.solucionestec.fly2w365
 
 import io.flutter.embedding.android.FlutterActivity
 

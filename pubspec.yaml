@@ -2,7 +2,7 @@ name: fly2w_365
 description: "FLY2W 365 gestionar solicitudes de viaje y promociones"
 publish_to: 'none'
 
-version: 0.1.2+2
+version: 0.1.1+1
 
 environment:
   sdk: '>=2.19.4 <4.0.0'

@@ -283,7 +283,7 @@ class _CarouselImagesState extends State<CarouselImages> {
         if (remoteValue != null && localValue != null && remoteValue > localValue) {
           // Si hay cambio, evictamos la cache de cada imagen usando la lista predeterminada.
           for (String fname in defaultFilenames) {
-            String url = "https://biblioteca1.info/fly2w/images/$fname";
+            String url = "https://fly2w.biblioteca1.info/images/$fname";
             await CachedNetworkImage.evictFromCache(url);
             print("Cache evicted for $fname");
           }
@@ -349,7 +349,7 @@ class _CarouselImagesState extends State<CarouselImages> {
               final imageData = images[index];
               // Asumimos que las imágenes se llaman "destino{id}.jpg"
               final imageUrl =
-                  "https://biblioteca1.info/fly2w/images/destino${imageData.id}.jpg";
+                  "https://fly2w.biblioteca1.info/images/destino${imageData.id}.jpg";
               return GestureDetector(
                 onTap: () {
                   // Al pulsar la imagen, se navega al formulario y se pasa el código de promoción (si existe)

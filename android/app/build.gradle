@@ -1,22 +1,26 @@
-// android/app/build.gradle
-
 plugins {
     id "com.android.application"
     id "kotlin-android"
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Cargar key.properties para firma release desde la carpeta padre (raíz del proyecto Flutter)
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('../key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+} else {
+    throw new GradleException("El archivo key.properties no se encontró en la raíz del proyecto Flutter: ${keystorePropertiesFile.absolutePath}")
+}
+
 android {
-    namespace           = "com.example.fly2w_365"
-    compileSdk          = flutter.compileSdkVersion
-    // Forzar la versión NDK más alta requerida por los plugins
-    ndkVersion          = "27.0.12077973"
+    namespace = "com.solucionestec.fly2w365"
+    compileSdk = flutter.compileSdkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
-        sourceCompatibility        = JavaVersion.VERSION_1_8
-        targetCompatibility        = JavaVersion.VERSION_1_8
-        // Habilitar core library desugaring para librerías AAR que usan Java 8+
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
         coreLibraryDesugaringEnabled = true
     }
 
@@ -25,20 +29,36 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.fly2w_365"
-        minSdk        = flutter.minSdkVersion
-        targetSdk     = flutter.targetSdkVersion
-        versionCode   = flutter.versionCode
-        versionName   = flutter.versionName
+        applicationId = "com.solucionestec.fly2w365"
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile file(keystoreProperties['storeFile'])
+            storePassword keystoreProperties['storePassword']
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig signingConfigs.release
+            shrinkResources true
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            ndk {
+                // Genera símbolos nativos completos para debugging
+                debugSymbolLevel 'FULL'
+            }
         }
     }
 
-    // Copiar el APK de salida a un nombre personalizado sin eliminar el archivo original
+    // Copiar el APK con un nombre personalizado
     afterEvaluate {
         def apkDir = file("$buildDir/outputs/flutter-apk")
         tasks.named("assembleRelease").configure {
@@ -48,7 +68,7 @@ android {
                         def newName = "Fly2w365-v${android.defaultConfig.versionName}.apk"
                         def newFile = new File(apkDir, newName)
                         ant.copy(file: file, tofile: newFile, overwrite: true)
-                        println("APK copied as: $newName")
+                        println("APK copiado como: $newName")
                     }
                 }
             }
@@ -57,7 +77,6 @@ android {
 }
 
 dependencies {
-    // Desugaring runtime para APIs de Java 8
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }
 
