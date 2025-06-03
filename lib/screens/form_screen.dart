@@ -1,15 +1,13 @@
 import 'dart:convert';
-import 'dart:async';
-import 'dart:io'; // Para operaciones con archivos locales
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl_phone_field/intl_phone_field.dart';
+import 'package:fly2w_365/resources/funciones.dart';
+// import 'package:geocoding/geocoding.dart';
+// import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:path_provider/path_provider.dart'; // Para obtener el directorio local
+import 'package:intl_phone_field/intl_phone_field.dart';
+import 'package:path_provider/path_provider.dart';
 import 'custom_alert_widget.dart';
-
 
 // Paleta de colores
 const Color blanco = Color(0xFFFFFFFF);
@@ -22,10 +20,10 @@ const Color fondoFormulario = Color(0xFFF7F7F7);
 class FormScreen extends StatefulWidget {
   final String? promoCode;
 
-  const FormScreen({Key? key, this.promoCode}) : super(key: key);
+  const FormScreen({super.key, this.promoCode});
 
   @override
-  _FormScreenState createState() => _FormScreenState();
+  State<FormScreen> createState() => _FormScreenState();
 }
 
 class _FormScreenState extends State<FormScreen> {
@@ -62,6 +60,7 @@ class _FormScreenState extends State<FormScreen> {
   @override
   void initState() {
     super.initState();
+
     if (widget.promoCode != null) {
       codigoPromoController.text = widget.promoCode!;
     }
@@ -143,26 +142,29 @@ class _FormScreenState extends State<FormScreen> {
   }
 
   Future<void> _obtenerCodigoPais() async {
-    try {
-      // Verifica y solicita permisos si es necesario
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-        permission = await Geolocator.requestPermission();
-      }
-
-      // Obtén la ubicación actual del usuario
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-
-      // Realiza la geocodificación inversa para obtener datos de la ubicación
-      List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
-      if (placemarks.isNotEmpty) {
-        setState(() {
-          _initialCountryCode = placemarks.first.isoCountryCode ?? 'PE';
-        });
-      }
-    } catch (e) {
-      print("Error al obtener el código de país: $e");
-    }
+    setState(() {
+      _initialCountryCode = datosPaisActual()["codigoPais"];
+    });
+    // try {
+    //   // Verifica y solicita permisos si es necesario
+    //   LocationPermission permission = await Geolocator.checkPermission();
+    //   if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+    //     permission = await Geolocator.requestPermission();
+    //   }
+    //
+    //   // Obtén la ubicación actual del usuario
+    //   Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    //
+    //   // Realiza la geocodificación inversa para obtener datos de la ubicación
+    //   List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+    //   if (placemarks.isNotEmpty) {
+    //     setState(() {
+    //       _initialCountryCode = placemarks.first.isoCountryCode ?? 'PE';
+    //     });
+    //   }
+    // } catch (e) {
+    //   print("Error al obtener el código de país: $e");
+    // }
   }
 
   Future<void> _selectFechaPartida(BuildContext context) async {
@@ -349,11 +351,12 @@ class _FormScreenState extends State<FormScreen> {
       appBar: AppBar(
         backgroundColor: blanco,
         elevation: 0,
+        forceMaterialTransparency: true,
         iconTheme: IconThemeData(color: azulVibrante),
         title: Row(
           children: [
             Image.asset(
-              'lib/assets/images/logo.png',
+              'assets/images/logo.png',
               height: 40,
             ),
             SizedBox(width: 8),
@@ -367,197 +370,200 @@ class _FormScreenState extends State<FormScreen> {
           ],
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Card(
-          color: fondoFormulario,
-          elevation: 4,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Código de Promoción (opcional, autocompletado si se pasa promoCode)
-                  TextFormField(
-                    controller: codigoPromoController,
-                    decoration: _buildInputDecoration("Código de Promoción (Opcional)", hint: "Ej. A0123 o PE000"),
-                  ),
-                  SizedBox(height: 16),
-                  // Origen (Autocomplete con datos provenientes de la API)
-                  Autocomplete<String>(
-                    optionsBuilder: (TextEditingValue textEditingValue) {
-                      if (textEditingValue.text.isEmpty)
-                        return const Iterable<String>.empty();
-                      return locations.where((String option) {
-                        return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
-                      });
-                    },
-                    onSelected: (String selection) {
-                      origenController.text = selection;
-                    },
-                    fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
-                      return TextFormField(
-                        controller: textEditingController,
-                        focusNode: focusNode,
-                        decoration: _buildInputDecoration("Lugar de partida"),
-                        validator: (value) {
-                          if (value == null || value.isEmpty)
-                            return "Seleccione un origen";
-                          return null;
-                        },
-                      );
-                    },
-                  ),
-                  SizedBox(height: 16),
-                  // Destino (Autocomplete)
-                  Autocomplete<String>(
-                    optionsBuilder: (TextEditingValue textEditingValue) {
-                      if (textEditingValue.text.isEmpty)
-                        return const Iterable<String>.empty();
-                      return locations.where((String option) {
-                        return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
-                      });
-                    },
-                    onSelected: (String selection) {
-                      destinoController.text = selection;
-                    },
-                    fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
-                      return TextFormField(
-                        controller: textEditingController,
-                        focusNode: focusNode,
-                        decoration: _buildInputDecoration("Lugar de destino"),
-                        validator: (value) {
-                          if (!soloPartida && (value == null || value.isEmpty))
-                            return "Seleccione un destino";
-                          return null;
-                        },
-                      );
-                    },
-                  ),
-                  SizedBox(height: 16),
-                  // Fila de selectores de Fecha de Partida y Retorno
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildDateSelector("Fecha de partida", fechaPartida, true, () => _selectFechaPartida(context)),
-
-                      ),
-                      SizedBox(width: 16),
-                      Expanded(
-                        child: _buildDateSelector("Fecha de retorno", fechaRetorno, !soloPartida, () => _selectFechaRetorno(context)),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  // Checkbox: Solo Partida
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: soloPartida,
-                        activeColor: azulClaro,
-                        onChanged: (value) {
-                          setState(() {
-                            soloPartida = value ?? false;
-                            if (soloPartida) fechaRetorno = null;
-                          });
-                        },
-                      ),
-                      Text(
-                        "Solo Partida (sin fecha de retorno)",
-                        style: TextStyle(color: azulVibrante),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  // Checkbox: Fechas Fijas
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: fechasFijas,
-                        activeColor: azulClaro,
-                        onChanged: (value) {
-                          setState(() {
-                            fechasFijas = value ?? false;
-                          });
-                        },
-                      ),
-                      Text(
-                        "Fechas Fijas",
-                        style: TextStyle(color: azulVibrante),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 16),
-                  // Dropdown: Número de Pasajeros
-                  _buildPassengerDropdown(),
-                  SizedBox(height: 16),
-                  // Nombre y Apellido
-                  TextFormField(
-                    controller: nombreController,
-                    decoration: _buildInputDecoration("Nombre y Apellido de Contacto"),
-                    validator: (value) {
-                      if (value == null || value.isEmpty)
-                        return "Este campo es obligatorio";
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: 16),
-                  // Teléfono (intl_phone_field)
-                  IntlPhoneField(
-                    decoration: _buildInputDecoration("Teléfono"),
-                    initialCountryCode: _initialCountryCode,
-                    onChanged: (phone) {
-                      completePhoneNumber = phone.completeNumber;
-                    },
-                    validator: (phone) {
-                      if (phone == null || phone.number.isEmpty)
-                        return "Ingrese su número de teléfono";
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: 16),
-                  // Correo
-                  TextFormField(
-                    controller: correoController,
-                    decoration: _buildInputDecoration("Correo"),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty)
-                        return "Este campo es obligatorio";
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value))
-                        return "Ingrese un correo válido";
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: 16),
-                  // Condiciones especiales
-                  TextFormField(
-                    controller: condicionesController,
-                    decoration: _buildInputDecoration("Condiciones especiales"),
-                    maxLines: 3,
-                  ),
-                  SizedBox(height: 20),
-                  // Botón de Envío
-                  Center(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (_formKey.currentState!.validate()) {
-                          await _sendReserva();
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: azulVibrante,
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                        textStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: Text("Solicitar cotización", style: TextStyle(color: blanco)),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Card(
+            color: fondoFormulario,
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Código de Promoción (opcional, autocompletado si se pasa promoCode)
+                    TextFormField(
+                      controller: codigoPromoController,
+                      decoration: _buildInputDecoration("Código de Promoción (Opcional)", hint: "Ej. A0123 o PE000"),
                     ),
-                  ),
-                ],
+                    SizedBox(height: 16),
+                    // Origen (Autocomplete con datos provenientes de la API)
+                    Autocomplete<String>(
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text.isEmpty)
+                          return const Iterable<String>.empty();
+                        return locations.where((String option) {
+                          return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                        });
+                      },
+                      onSelected: (String selection) {
+                        origenController.text = selection;
+                      },
+                      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                        return TextFormField(
+                          controller: textEditingController,
+                          focusNode: focusNode,
+                          decoration: _buildInputDecoration("Lugar de partida"),
+                          validator: (value) {
+                            if (value == null || value.isEmpty)
+                              return "Seleccione un origen";
+                            return null;
+                          },
+                        );
+                      },
+                    ),
+                    SizedBox(height: 16),
+                    // Destino (Autocomplete)
+                    Autocomplete<String>(
+                      optionsBuilder: (TextEditingValue textEditingValue) {
+                        if (textEditingValue.text.isEmpty)
+                          return const Iterable<String>.empty();
+                        return locations.where((String option) {
+                          return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                        });
+                      },
+                      onSelected: (String selection) {
+                        destinoController.text = selection;
+                      },
+                      fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                        return TextFormField(
+                          controller: textEditingController,
+                          focusNode: focusNode,
+                          decoration: _buildInputDecoration("Lugar de destino"),
+                          validator: (value) {
+                            if (!soloPartida && (value == null || value.isEmpty))
+                              return "Seleccione un destino";
+                            return null;
+                          },
+                        );
+                      },
+                    ),
+                    SizedBox(height: 16),
+                    // Fila de selectores de Fecha de Partida y Retorno
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildDateSelector("Fecha de partida", fechaPartida, true, () => _selectFechaPartida(context)),
+
+                        ),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: _buildDateSelector("Fecha de retorno", fechaRetorno, !soloPartida, () => _selectFechaRetorno(context)),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    // Checkbox: Solo Partida
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: soloPartida,
+                          activeColor: azulClaro,
+                          onChanged: (value) {
+                            setState(() {
+                              soloPartida = value ?? false;
+                              if (soloPartida) fechaRetorno = null;
+                            });
+                          },
+                        ),
+                        Text(
+                          "Solo Partida (sin fecha de retorno)",
+                          style: TextStyle(color: azulVibrante),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    // Checkbox: Fechas Fijas
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: fechasFijas,
+                          activeColor: azulClaro,
+                          onChanged: (value) {
+                            setState(() {
+                              fechasFijas = value ?? false;
+                            });
+                          },
+                        ),
+                        Text(
+                          "Fechas Fijas",
+                          style: TextStyle(color: azulVibrante),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16),
+                    // Dropdown: Número de Pasajeros
+                    _buildPassengerDropdown(),
+                    SizedBox(height: 16),
+                    // Nombre y Apellido
+                    TextFormField(
+                      controller: nombreController,
+                      decoration: _buildInputDecoration("Nombre y Apellido de Contacto"),
+                      validator: (value) {
+                        if (value == null || value.isEmpty)
+                          return "Este campo es obligatorio";
+                        return null;
+                      },
+                    ),
+                    SizedBox(height: 16),
+                    // Teléfono (intl_phone_field)
+                    IntlPhoneField(
+                      decoration: _buildInputDecoration("Teléfono"),
+                      initialCountryCode: _initialCountryCode,
+                      searchText: "Buscar país",
+                      onChanged: (phone) {
+                        completePhoneNumber = phone.completeNumber;
+                      },
+                      validator: (phone) {
+                        if (phone == null || phone.number.isEmpty)
+                          return "Ingrese su número de teléfono";
+                        return null;
+                      },
+                    ),
+                    SizedBox(height: 16),
+                    // Correo
+                    TextFormField(
+                      controller: correoController,
+                      decoration: _buildInputDecoration("Correo"),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty)
+                          return "Este campo es obligatorio";
+                        if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value))
+                          return "Ingrese un correo válido";
+                        return null;
+                      },
+                    ),
+                    SizedBox(height: 16),
+                    // Condiciones especiales
+                    TextFormField(
+                      controller: condicionesController,
+                      decoration: _buildInputDecoration("Condiciones especiales"),
+                      maxLines: 3,
+                    ),
+                    SizedBox(height: 20),
+                    // Botón de Envío
+                    Center(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          if (_formKey.currentState!.validate()) {
+                            await _sendReserva();
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: azulVibrante,
+                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                          textStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: Text("Solicitar cotización", style: TextStyle(color: blanco)),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

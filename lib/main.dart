@@ -1,24 +1,29 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart';
-import 'screens/form_screen.dart';
+import 'package:fly2w_365/screens/home_screen.dart';
+import 'package:fly2w_365/screens/form_screen.dart';
 
 void main() {
-  runApp(FLY2WApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
 }
 
-class FLY2WApp extends StatelessWidget {
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'FLY2W 365',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => HomeScreen(),
-        '/form': (context) => FormScreen(),
-      },
+      home: HomeScreen(),
+      // initialRoute: '/',
+      // routes: {
+      //   '/': (context) => HomeScreen(),
+      //   '/form': (context) => FormScreen(),
+      // },
     );
   }
 }
